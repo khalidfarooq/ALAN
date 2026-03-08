@@ -386,6 +386,25 @@ export async function startServer(): Promise<void> {
 		}
 	});
 
+	// Broadcast agent graph state transitions — real-time trace updates
+	eventBus.on("agent:state_change", (payload) => {
+		for (const client of clients.values()) {
+			if (
+				client.authenticated &&
+				client.sessionId === payload.sessionId &&
+				client.ws.readyState === WebSocket.OPEN
+			) {
+				client.ws.send(
+					JSON.stringify({
+						type: "agent:state",
+						data: payload,
+						ts: Date.now(),
+					}),
+				);
+			}
+		}
+	});
+
 	// Idle client cleanup
 	setInterval(
 		() => {

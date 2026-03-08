@@ -442,8 +442,21 @@ export function registerBuiltinSkills(): void {
 	skillRegistry.register(webSearchSkill);
 	skillRegistry.register(memorySkill);
 
+	// New power skills
+	import("./filesystem-skill.js").then(({ filesystemSkill }) => {
+		skillRegistry.register(filesystemSkill);
+	});
+	import("./shell-skill.js").then(({ shellSkill }) => {
+		skillRegistry.register(shellSkill);
+	});
+	import("./code-skill.js").then(({ codeSkill }) => {
+		skillRegistry.register(codeSkill);
+	});
+	import("./process-skill.js").then(({ processSkill }) => {
+		skillRegistry.register(processSkill);
+	});
+
 	// Register task engine executors so background dispatches actually run
-	// Import lazily to avoid circular deps
 	import("../tasks/task-engine.js").then(({ taskEngine }) => {
 		taskEngine.registerExecutor("file-search", async (task, helpers) => {
 			helpers.progress(10, "Starting file search...");
@@ -477,6 +490,45 @@ export function registerBuiltinSkills(): void {
 			const result = await memorySkill.execute(actionId ?? "recall", params);
 			helpers.progress(100, "Done");
 			return result;
+		});
+
+		taskEngine.registerExecutor("filesystem", async (task, helpers) => {
+			helpers.progress(10, "Starting filesystem operation...");
+			const { actionId, ...params } = task.params as {
+				actionId: string;
+			} & Record<string, unknown>;
+			import("./filesystem-skill.js").then(async ({ filesystemSkill }) => {
+				helpers.progress(50, `Running ${actionId}...`);
+				const result = await filesystemSkill.execute(actionId, params);
+				helpers.progress(100, "Done");
+				return result;
+			});
+		});
+
+		taskEngine.registerExecutor("shell", async (task, helpers) => {
+			helpers.progress(10, "Running command...");
+			const { actionId, ...params } = task.params as {
+				actionId: string;
+			} & Record<string, unknown>;
+			import("./shell-skill.js").then(async ({ shellSkill }) => {
+				helpers.progress(30, `Executing...`);
+				const result = await shellSkill.execute(actionId ?? "run", params);
+				helpers.progress(100, "Done");
+				return result;
+			});
+		});
+
+		taskEngine.registerExecutor("code", async (task, helpers) => {
+			helpers.progress(10, "Starting code operation...");
+			const { actionId, ...params } = task.params as {
+				actionId: string;
+			} & Record<string, unknown>;
+			import("./code-skill.js").then(async ({ codeSkill }) => {
+				helpers.progress(30, `Running ${actionId}...`);
+				const result = await codeSkill.execute(actionId, params);
+				helpers.progress(100, "Done");
+				return result;
+			});
 		});
 	});
 }

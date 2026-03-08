@@ -1,23 +1,44 @@
 # A.L.A.N.
 
-### Autonomous Local Assistant Node
+### Autonomous Local Assistant Node · v2.1.0
 
-A production-grade, security-hardened local AI assistant powered by Google Gemini. Built as a direct improvement over OpenClaw/ClawdBot, fixing every documented security flaw while adding a proper autonomous task engine.
+A production-grade, security-hardened local AI engineer powered by Google Gemini. Reads any file on your machine, writes exclusively to a sandboxed workspace, executes terminal commands, manages background processes, and autonomously builds full applications end-to-end.
+
+Originally built as a direct improvement over OpenClaw/ClawdBot, fixing every documented security flaw.
 
 ---
 
-## Why ALAN Exists
+## What's new in v2 (this release)
 
-OpenClaw's documented failures became ALAN's design requirements:
+### Agent Runtime — complete rewrite
 
-| OpenClaw Problem                                     | ALAN Solution                                                                     |
-| ---------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Secrets stored in plaintext `~/.clawdbot/.env`       | AES-256-GCM encrypted SQLite vault, Argon2id KDF                                  |
-| Bound to `0.0.0.0` — accessible from the internet    | Hardcoded `127.0.0.1` binding, refused at connection level                        |
-| Session tokens passable via query string             | Tokens only via `x-alan-token` header or WS auth frame                            |
-| Skills could read any secret in the environment      | Secrets are scoped per-skill — cross-skill reads throw and are audit-logged       |
-| Agent took autonomous actions without user awareness | Three-tier confirmation model enforced in code, not left to LLM judgment          |
-| No task tracking — long operations blocked the agent | Non-blocking async task engine with progress, pause, cancel, and restart recovery |
+| v1                                   | v2                                                   |
+| ------------------------------------ | ---------------------------------------------------- |
+| Flat `while` loop, max 5 tool rounds | Graph state machine, max 8 tool rounds               |
+| No planning — reacts directly        | Plan→Execute: decomposes complex goals before acting |
+| No self-evaluation                   | Reflection pass after every response                 |
+| Regex-only memory trigger            | Extended auto-memorize patterns                      |
+| No observability                     | Full per-run trace: every state, tool, and duration  |
+| Single system prompt                 | Autonomous coding instructions, workspace awareness  |
+
+### New skills (7 → 4 new, 35 total actions)
+
+| Skill                 | Actions | Write boundary                                                                       |
+| --------------------- | ------- | ------------------------------------------------------------------------------------ |
+| **Filesystem**        | 11      | Read anywhere · Write workspace only (hard path check)                               |
+| **Shell**             | 3       | Safe commands auto-proceed · Dangerous commands confirmed · 10 hard-blocked patterns |
+| **Code Intelligence** | 7       | Scaffold, generate, patch, test, fix, explain, install                               |
+| **Process Manager**   | 5       | Start/stop/restart/list/logs for background processes                                |
+
+### Frontend — Workspace view added
+
+- Live file tree of `~/.alan/workspace/main`
+- Running process monitor with one-click stop
+- Quick-action buttons (scaffold React/Node/Python/Express)
+- Installed skills dashboard
+- Real-time graph state indicator in header (PLANNING → THINKING → CALLING_TOOL → REFLECTING)
+- Per-message trace panel (collapsible, shows every step + ms durations)
+- Plan badge on messages that triggered the planner
 
 ---
 
@@ -26,60 +47,24 @@ OpenClaw's documented failures became ALAN's design requirements:
 ### Prerequisites
 
 - Node.js 20+
-- A Gemini API key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
+- Gemini API key — [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
 
-### 2. Install backend dependencies
-
-```bash
-cd ALAN
-npm install
-```
-
-### 2. Install UI dependencies
+### Install & run
 
 ```bash
-cd ALAN/ui
-npm install
-```
+# Backend
+cd ALAN && npm install
+npm run dev
 
-### 3. Start the backend (Terminal 1)
-
-```bash
-cd ALAN
+# Frontend (separate terminal)
+cd ALAN/ui && npm install
 npm run dev
 ```
 
-You should see:
+Open **http://127.0.0.1:5173**
 
-```
-╔═══════════════════════════════════════╗
-║         A.L.A.N. is running           ║
-║  URL:   http://127.0.0.1:7432         ║
-║  Mode:  localhost-only (secure)       ║
-╚═══════════════════════════════════════╝
-```
-
-### 4. Start the UI (Terminal 2)
-
-```bash
-cd ALAN/ui
-npm run dev
-```
-
-### 5. Open in browser
-
-```
-http://127.0.0.1:5173
-```
-
-### 6. First-run setup
-
-On first visit you will be prompted to:
-
-1. Set a **master passphrase** (minimum 8 characters) — this encrypts your vault with Argon2id
-2. Enter your **Gemini API key** — stored encrypted immediately, never written to disk in plaintext
-
-On subsequent starts, enter your passphrase to unlock the vault. If you delete your Gemini key from the Secrets tab, re-add it with the name `gemini.api_key` and tier `RUNTIME`.
+**First run:** set master passphrase → enter Gemini API key → done.  
+**Subsequent runs:** enter passphrase only.
 
 ---
 
@@ -91,25 +76,39 @@ ALAN/
 ├── package.json
 ├── tsconfig.json
 │
-├── src/                          Backend — Node.js + TypeScript
-│   ├── main.ts                   Entry point
-│   ├── vault/
-│   │   └── vault.ts              AES-256-GCM encrypted secret store
-│   ├── llm/
-│   │   ├── gemini-client.ts      Gemini API with native function calling
-│   │   └── rate-limiter.ts       4-dimension token bucket queue (RPM/TPM/RPD/IPM)
-│   ├── tasks/
-│   │   └── task-engine.ts        Non-blocking background task engine
-│   ├── memory/
-│   │   └── memory-engine.ts      SQLite FTS5 persistent memory
-│   ├── skills/
-│   │   └── skill-system.ts       Sandboxed skill registry + built-in skills
+├── src/
+│   ├── main.ts                          Entry point
+│   │
 │   ├── agent/
-│   │   └── agent.ts              Main orchestrator — tool loop + tier enforcement
-│   └── server/
-│       └── index.ts              Express + WebSocket server (localhost-only)
+│   │   ├── agent.ts                     Main orchestrator — v2 rewrite
+│   │   ├── graph.ts                     NEW — graph state machine + per-run trace
+│   │   ├── planner.ts                   NEW — Plan→Execute decomposition
+│   │   └── reflector.ts                 NEW — post-response quality reflection
+│   │
+│   ├── llm/
+│   │   ├── gemini-client.ts             Gemini API — native function calling
+│   │   └── rate-limiter.ts              4-dimension token bucket (RPM/TPM/RPD/IPM)
+│   │
+│   ├── memory/
+│   │   └── memory-engine.ts             SQLite FTS5 persistent memory
+│   │
+│   ├── server/
+│   │   └── index.ts                     Express + WebSocket (localhost-only)
+│   │
+│   ├── skills/
+│   │   ├── skill-system.ts              Registry + v1 built-ins (file-search, web-search, memory)
+│   │   ├── filesystem-skill.ts          NEW — read anywhere, write workspace only
+│   │   ├── shell-skill.ts               NEW — terminal command execution
+│   │   ├── code-skill.ts                NEW — scaffold, generate, patch, test, fix
+│   │   └── process-skill.ts             NEW — background process manager
+│   │
+│   ├── tasks/
+│   │   └── task-engine.ts               Non-blocking background task engine (SQLite)
+│   │
+│   └── vault/
+│       └── vault.ts                     AES-256-GCM encrypted secret store
 │
-└── ui/                           Frontend — React 18 + Vite + Tailwind
+└── ui/
     ├── index.html
     ├── package.json
     ├── vite.config.ts
@@ -120,16 +119,20 @@ ALAN/
     └── src/
         ├── main.tsx
         ├── index.css
-        └── App.tsx               Full dashboard: chat, tasks, memory, secrets, audit, settings
+        └── App.tsx                      Dashboard — chat, workspace, tasks, memory,
+                                         secrets, audit, settings
 ```
 
 ### Runtime data (written to `~/.alan/`, never committed)
 
 ```
 ~/.alan/
-├── vault.db     Encrypted secrets (AES-256-GCM)
-├── tasks.db     Task queue and history (survives restarts)
-└── memory.db    FTS5 full-text searchable memories
+├── vault.db                 AES-256-GCM encrypted secrets
+├── tasks.db                 Task queue + history (SQLite)
+├── memory.db                FTS5 full-text memories (SQLite)
+└── workspace/
+    └── main/                ALL AI writes go here
+        └── (your projects)  scaffolded apps, generated code, patches
 ```
 
 ---
@@ -138,277 +141,218 @@ ALAN/
 
 ### Secret Vault
 
-All credentials are stored in an AES-256-GCM encrypted SQLite database at `~/.alan/vault.db`.
-
-- **Key derivation**: Argon2id — 64MB memory cost, 3 iterations, 4 threads. Brute-forcing the passphrase against the vault file is computationally prohibitive.
-- **No plaintext ever**: API keys are injected directly into the encrypted vault at setup. They never appear in `.env` files, shell history, or log output.
-- **Secret tiers**:
-  - `RUNTIME` — automatically injected on every LLM call (e.g. `gemini.api_key`)
-  - `SKILL` — scoped to one specific skill; another skill attempting to read it throws an exception and creates an audit log entry
-  - `ADMIN` — only accessible via explicit vault unlock UI; never readable by the agent
-- **Memory zeroing**: The master key `Buffer` is explicitly zeroed on vault lock via `buf.fill(0)`
-- **Audit log**: Every secret read, write, delete, and denied access attempt is recorded immutably
+- **AES-256-GCM** encryption, SQLite at `~/.alan/vault.db`
+- **Argon2id** key derivation — 64MB memory, 3 iterations, 4 threads
+- **Secret tiers:** `RUNTIME` (auto-injected) / `SKILL` (scope-locked) / `ADMIN` (manual only)
+- **Memory zeroing** — master key buffer zeroed on vault lock
+- **Immutable audit log** — every access (including denied) recorded
 
 ### Network Hardening
 
-- Server binds to `127.0.0.1` only — enforced in both `listen()` and a middleware check on every request
-- CORS locked to `localhost` origins only
-- WebSocket connections from non-local IPs are immediately closed with code 1008
-- Session tokens are generated fresh on every server restart with `crypto.randomUUID()`
-- Tokens transmitted via `x-alan-token` header (HTTP) or auth frame (WebSocket) — never via query parameters
+- Binds to `127.0.0.1` only — enforced at both `listen()` and middleware level
+- CORS locked to localhost origins
+- WebSocket non-local connections closed immediately (code 1008)
+- Session tokens regenerated on every restart via `crypto.randomUUID()`
 
----
+### Filesystem Boundary
 
-## Action Tier System
+The write boundary is enforced in code, not by prompt trust.
 
-Every skill action declares a tier in its manifest. The agent enforces this **in code** — the LLM cannot bypass it by saying the right words.
+Every write operation calls `assertWriteAllowed()` which does:
 
-| Tier             | Examples                                              | Behaviour                                                         |
-| ---------------- | ----------------------------------------------------- | ----------------------------------------------------------------- |
-| 🟢 `READ`        | Search files, web search, recall memory               | Executes immediately, zero friction                               |
-| 🟡 `WRITE`       | Store memory, send email draft, create calendar event | Agent loop pauses — approval banner appears in chat               |
-| 🔴 `DESTRUCTIVE` | Delete files, run shell commands, post publicly       | Agent loop pauses — red warning banner with full parameter detail |
+```typescript
+const abs = resolve(target); // follows symlinks
+if (!abs.startsWith(WORKSPACE_ROOT + "/") && abs !== WORKSPACE_ROOT) {
+	throw new Error(`Write blocked: outside workspace`);
+}
+```
 
-When a WRITE or DESTRUCTIVE action is required, ALAN emits a `confirmation:required` WebSocket event. An inline banner appears in the chat thread with the full action description and parameter values. The user clicks **Approve** or **Deny**. Unanswered confirmations auto-deny after 5 minutes.
+This means symlink traversal and `../` path games are blocked — `resolve()` normalises the path before the check.
 
----
+### Shell Safety
 
-## Tool Execution Loop
+Two execution tiers:
 
-ALAN uses Gemini's native `FunctionDeclaration` function calling — not text heuristics.
+- **`run_safe` (READ)** — only commands whose base name is in the `SAFE_COMMANDS` allowlist run without confirmation: `node`, `npm`, `npx`, `git`, `python`, `tsc`, `jest`, `ls`, `grep`, `curl`, `make`, and ~30 others
+- **`run` (DESTRUCTIVE)** — any other command goes through the confirmation banner
+
+Both tiers go through `HARDBLOCKED` pattern matching first. The following patterns are **never executed** regardless of user confirmation:
 
 ```
-User message
-     ↓
-Gemini (all registered skill tools passed as FunctionDeclarations)
-     ↓
-toolCalls[] in response?
-  ├── Yes → for each call:
-  │           READ        → execute immediately, no prompt
-  │           WRITE       → pause → await user confirm → execute or skip
-  │           DESTRUCTIVE → pause → await user confirm → execute or skip
-  │         → send all results back to Gemini via functionResponse
-  │         → repeat (max 5 rounds to prevent infinite loops)
-  └── No  → return final text response to user
+rm -rf /          fork bombs :(){ ... }     mkfs.*
+dd if=.*of=/dev/  chmod -R 777 /            >/dev/sd*
+shutdown/reboot   passwd root               iptables -F
 ```
 
 ---
 
-## Background Task Engine
+## Agent Runtime — Architecture
 
-Tasks that are expected to take more than a few seconds are dispatched to the non-blocking task engine. The main agent thread returns a response immediately.
+### Graph State Machine
 
-**Task lifecycle:**
+Every `chat()` call creates an `AgentGraph` instance that records every state transition with a label and millisecond duration. The completed trace is attached to the response message and rendered as a collapsible panel in the UI.
 
 ```
-submit() → PENDING → RUNNING → COMPLETED
-                   ↘ AWAITING_CONFIRMATION  (WRITE action needed mid-task)
-                   ↘ FAILED
-                   ↘ CANCELLED
+IDLE → PLANNING → THINKING → CALLING_TOOL → REFLECTING → DONE
+                      ↓              ↓
+              AWAITING_CONFIRMATION ←┘ (on WRITE/DESTRUCTIVE tools)
+                      ↓
+              CALLING_TOOL (if approved) | THINKING (if denied)
 ```
 
-- Tasks are written to SQLite before dispatch — ALAN resumes interrupted tasks on restart
-- Up to 4 concurrent tasks (configurable in `TaskEngine` constructor)
-- Each task reports progress 0–100% with optional status messages
-- A background task that hits a WRITE/DESTRUCTIVE action pauses and notifies you — it never acts silently
-- Any task can be cancelled from the Tasks tab; the worker receives an abort signal immediately
+### ReAct Reasoning
+
+Before each tool call, Gemini produces a brief thought (1-2 sentences) explaining its reasoning. Tool results become observations. The thought → action → observation cycle repeats up to 8 rounds.
+
+### Plan → Execute
+
+`shouldPlan()` fires when the message is over 15 words or contains sequential keywords (`then`, `after that`, `first...then`, `followed by`, `step by step`, etc.). When triggered, a dedicated low-temperature Gemini call decomposes the goal into a typed `StepPlan` with ordered steps and tool hints before the main loop begins.
+
+### Reflection
+
+After producing a final text response, a second low-temperature Gemini call evaluates whether the response fully addressed the goal. If confidence exceeds 0.4 and a gap is found, the gap note appears below the message in the UI. For WRITE/DESTRUCTIVE actions, a safety check runs regardless.
+
+### Autonomous Coding Workflow
+
+For complex coding requests, ALAN chains tools automatically:
+
+```
+1. code__scaffold        — create project structure + install deps
+2. filesystem__write_file — write each component / module
+3. shell__run_safe        — npm install, git init, build checks
+4. code__run_tests        — verify correctness
+5. code__fix_errors       — if tests fail: read file + error → Gemini fix → write back → repeat
+6. process__start         — launch dev server
+```
+
+---
+
+## Skills Reference
+
+### Filesystem (`filesystem__*`)
+
+| Action           | Tier        | Description                                              |
+| ---------------- | ----------- | -------------------------------------------------------- |
+| `read_file`      | READ        | Read any text file. Truncates at 40,000 chars by default |
+| `list_dir`       | READ        | Recursive directory listing with sizes, up to depth 4    |
+| `file_info`      | READ        | Metadata: size, modified date, type, is-text             |
+| `search_files`   | READ        | Search by filename or content substring                  |
+| `workspace_tree` | READ        | Full tree of `~/.alan/workspace/main`                    |
+| `write_file`     | WRITE       | Create or overwrite a file in workspace                  |
+| `append_file`    | WRITE       | Append to an existing workspace file                     |
+| `create_dir`     | WRITE       | Create directory (recursive) in workspace                |
+| `move_file`      | WRITE       | Move/rename within workspace                             |
+| `copy_file`      | WRITE       | Copy from anywhere into workspace                        |
+| `delete_file`    | DESTRUCTIVE | Delete a workspace file                                  |
+
+### Shell (`shell__*`)
+
+| Action         | Tier        | Description                                                    |
+| -------------- | ----------- | -------------------------------------------------------------- |
+| `run_safe`     | READ        | Allowlisted commands only (node, npm, git, python, grep, etc.) |
+| `run`          | DESTRUCTIVE | Any command — hard-blocked patterns still refused              |
+| `kill_process` | DESTRUCTIVE | Kill a background PID with SIGTERM                             |
+
+Default working directory: `~/.alan/workspace/main`. Timeout: 30s (max 300s). Output cap: 10MB.
+
+### Code Intelligence (`code__*`)
+
+| Action          | Tier  | Description                                                                  |
+| --------------- | ----- | ---------------------------------------------------------------------------- |
+| `scaffold`      | WRITE | Create full project from template (node-ts, react-vite, python, express-api) |
+| `generate_code` | WRITE | Gemini writes code to spec → saves directly to workspace file                |
+| `patch_file`    | WRITE | Search-and-replace targeted edit (safer than full rewrites)                  |
+| `install_deps`  | WRITE | npm / pip / yarn / pnpm install                                              |
+| `run_tests`     | READ  | Run test suite, parse pass/fail counts                                       |
+| `explain_code`  | READ  | Line-by-line explanation with Gemini                                         |
+| `fix_errors`    | WRITE | Read file + error output → Gemini fix → write back                           |
+
+### Process Manager (`process__*`)
+
+| Action    | Tier        | Description                                           |
+| --------- | ----------- | ----------------------------------------------------- |
+| `start`   | DESTRUCTIVE | Spawn named background process, capture stdout/stderr |
+| `stop`    | DESTRUCTIVE | SIGTERM a named process (SIGKILL after 3s)            |
+| `restart` | DESTRUCTIVE | Stop then start                                       |
+| `list`    | READ        | All managed processes with status, PID, uptime        |
+| `logs`    | READ        | Last N lines of stdout/stderr for a named process     |
+
+Processes are tracked in an in-memory map with a 200-line ring buffer per stream.
 
 ---
 
 ## Gemini Rate Limiting
 
-ALAN tracks all four Gemini quota dimensions simultaneously using token buckets that refill continuously.
+Tracks all four Gemini quota dimensions with token buckets:
 
-| Dimension               | Free Tier | Paid Tier 1 |
-| ----------------------- | --------- | ----------- |
-| RPM (requests / minute) | 15        | 150         |
-| TPM (tokens / minute)   | 1,000,000 | 4,000,000   |
-| RPD (requests / day)    | 1,500     | 10,000      |
-| IPM (images / minute)   | 10        | 100         |
+| Dimension | Free Tier | Paid Tier 1 |
+| --------- | --------- | ----------- |
+| RPM       | 15        | 150         |
+| TPM       | 1,000,000 | 4,000,000   |
+| RPD       | 1,500     | 10,000      |
+| IPM       | 10        | 100         |
 
-**Priority queue** — all requests enter a priority queue before executing:
+**Priority queue:** `INTERACTIVE` (chat) > `BACKGROUND` (tasks) > `BULK`
 
-- `INTERACTIVE` — your chat messages; highest priority, gracefully rejects with a wait estimate if delay > 2s
-- `BACKGROUND` — autonomous tasks; queued and spread across available quota
-- `BULK` — large file or batch analysis; uses leftover TPM budget only
-
-**On 429 errors**: exponential backoff with full jitter — `min(30s, 1s × 2ⁿ) × random(0,1)` — up to 5 retries before surfacing to the user.
-
-The sidebar shows live RPM and RPD bars. Full quota detail is in Settings. To switch to paid tier limits: **Settings → Gemini Quota → Switch to Paid Tier limits**.
+On 429: exponential backoff with full jitter — `min(30s, 2ⁿ × random)` — up to 5 retries.
 
 ---
 
-## Built-in Skills
+## REST API
 
-| Skill         | Action         | Tier  | Notes                                                                         |
-| ------------- | -------------- | ----- | ----------------------------------------------------------------------------- |
-| `file-search` | `search_files` | READ  | Recursive directory walk, 3 levels deep, 50 result cap                        |
-| `file-search` | `read_file`    | READ  | Text files only (.txt, .md, .json, .ts, .py, etc.), truncates at 10,000 chars |
-| `web-search`  | `search`       | READ  | DuckDuckGo instant answers — no API key required                              |
-| `memory`      | `remember`     | WRITE | Stores tagged memory; triggers confirmation banner                            |
-| `memory`      | `recall`       | READ  | FTS5 full-text search across all stored memories                              |
+All endpoints except `/api/status`, `/api/vault/setup`, `/api/vault/unlock` require `x-alan-token`.
 
----
-
-## Memory
-
-Memories are stored in SQLite with FTS5 full-text search indexing. Tags:
-
-`work` · `personal` · `project` · `preference` · `fact` · `task` · `context`
-
-The agent automatically stores notable user statements (preferences, personal facts) and injects the most relevant memories as context on every message. The Memory tab lets you view, edit, or delete any individual memory, or clear everything at once.
-
----
-
-## Adding Custom Skills
-
-```typescript
-import { type Skill, skillRegistry } from "./src/skills/skill-system.js";
-import { taskEngine } from "./src/tasks/task-engine.js";
-
-const mySkill: Skill = {
-	manifest: {
-		id: "my-skill",
-		name: "My Skill",
-		version: "1.0.0",
-		description: "What this skill does",
-		author: "Your Name",
-		permissions: [
-			{
-				type: "network",
-				scope: "api.example.com",
-				description: "Calls Example API",
-			},
-		],
-		secrets: [
-			{
-				name: "my-skill.api_key",
-				description: "Example API key",
-				required: true,
-			},
-		],
-		actions: [
-			{
-				id: "do_thing",
-				name: "Do Thing",
-				description: "Does the thing",
-				tier: "READ", // READ | WRITE | DESTRUCTIVE
-				params: {
-					query: {
-						type: "string",
-						description: "Search query",
-						required: true,
-					},
-				},
-			},
-		],
-	},
-
-	getTools() {
-		return this.manifest.actions.map((a) => ({
-			name: `${this.manifest.id}__${a.id}`,
-			description: `[${a.tier}] ${a.description}`,
-			parameters: {
-				type: "object" as const,
-				properties: { query: { type: "string", description: "Search query" } },
-				required: ["query"],
-			},
-		}));
-	},
-
-	async execute(actionId, params) {
-		const { vault } = await import("./src/vault/vault.js");
-		// Secret is scope-locked to 'my-skill' — other skills cannot read it
-		const apiKey = vault.getSecret("my-skill.api_key", "my-skill");
-		// ... do work
-		return { result: "..." };
-	},
-};
-
-// Register skill
-skillRegistry.register(mySkill);
-
-// Register background executor (so tasks can run non-blocking)
-taskEngine.registerExecutor("my-skill", async (task, helpers) => {
-	helpers.progress(10, "Starting...");
-	const { actionId, ...params } = task.params as { actionId: string } & Record<
-		string,
-		unknown
-	>;
-	helpers.progress(50, "Processing...");
-	const result = await mySkill.execute(actionId, params);
-	helpers.progress(100);
-	return result;
-});
-```
-
----
-
-## REST API Reference
-
-All endpoints except `/api/status`, `/api/vault/setup`, and `/api/vault/unlock` require the `x-alan-token` header.
-
-| Method | Endpoint                        | Description                                                        |
-| ------ | ------------------------------- | ------------------------------------------------------------------ |
-| GET    | `/api/status`                   | Vault initialized/unlocked status                                  |
-| POST   | `/api/vault/setup`              | First-run initialization — sets passphrase and optional Gemini key |
-| POST   | `/api/vault/unlock`             | Unlock vault, returns session token                                |
-| GET    | `/api/secrets`                  | List secret metadata (names, tiers, descriptions — never values)   |
-| POST   | `/api/secrets`                  | Add or update a secret                                             |
-| DELETE | `/api/secrets/:name`            | Delete a secret                                                    |
-| GET    | `/api/tasks`                    | List all tasks (active + history)                                  |
-| DELETE | `/api/tasks/:id`                | Cancel a task                                                      |
-| POST   | `/api/tasks/:id/confirm`        | Approve/deny a background task's pending action                    |
-| POST   | `/api/confirmations/:id`        | Approve/deny an inline agent tool confirmation                     |
-| GET    | `/api/memory`                   | List recent memories (last 50)                                     |
-| DELETE | `/api/memory/:id`               | Delete one memory                                                  |
-| DELETE | `/api/memory`                   | Clear all memories                                                 |
-| GET    | `/api/skills`                   | List registered skill manifests                                    |
-| GET    | `/api/quota`                    | Live Gemini quota snapshot (RPM/TPM/RPD/IPM)                       |
-| GET    | `/api/audit`                    | Vault audit log (last 100 entries)                                 |
-| POST   | `/api/settings/rate-limit-tier` | Switch quota to `paid` tier limits                                 |
+| Method | Endpoint                        | Description                             |
+| ------ | ------------------------------- | --------------------------------------- |
+| GET    | `/api/status`                   | Vault initialized/unlocked              |
+| POST   | `/api/vault/setup`              | First-run initialization                |
+| POST   | `/api/vault/unlock`             | Unlock vault, get session token         |
+| GET    | `/api/secrets`                  | List secret metadata (never values)     |
+| POST   | `/api/secrets`                  | Add/update secret                       |
+| DELETE | `/api/secrets/:name`            | Delete secret                           |
+| GET    | `/api/tasks`                    | All tasks                               |
+| DELETE | `/api/tasks/:id`                | Cancel task                             |
+| POST   | `/api/tasks/:id/confirm`        | Approve/deny background task action     |
+| POST   | `/api/confirmations/:id`        | Approve/deny inline tool action         |
+| GET    | `/api/memory`                   | Recent memories                         |
+| DELETE | `/api/memory/:id`               | Delete one memory                       |
+| DELETE | `/api/memory`                   | Clear all memories                      |
+| GET    | `/api/skills`                   | Registered skill manifests              |
+| GET    | `/api/quota`                    | Live Gemini quota snapshot              |
+| GET    | `/api/audit`                    | Vault audit log (last 100 entries)      |
+| GET    | `/api/workspace`                | Workspace file tree + running processes |
+| POST   | `/api/settings/rate-limit-tier` | Switch to paid tier limits              |
 
 ---
 
 ## WebSocket Protocol
 
-Connect to `ws://127.0.0.1:7432`. Send auth immediately after connect:
+Connect to `ws://127.0.0.1:7432`, authenticate immediately:
 
 ```json
 { "type": "auth", "token": "<session_token>" }
 ```
 
-**Server → Client events:**
+**Server → Client:**
 
-| Type                    | Payload                                                   | Description                                |
-| ----------------------- | --------------------------------------------------------- | ------------------------------------------ |
-| `auth:success`          | `{ sessionId }`                                           | Authentication accepted                    |
-| `auth:failed`           | `{ message }`                                             | Bad token or locked vault                  |
-| `chat:thinking`         | —                                                         | Agent is processing                        |
-| `chat:response`         | `{ message, quotaWarning? }`                              | Agent reply                                |
-| `chat:error`            | `{ message }`                                             | Processing error                           |
-| `task:update`           | `{ taskId, type, message, data }`                         | Task progress/status change                |
-| `confirmation:required` | `{ confirmationId, tier, toolName, description, params }` | WRITE/DESTRUCTIVE action awaiting approval |
+| Type                    | Description                                                        |
+| ----------------------- | ------------------------------------------------------------------ |
+| `auth:success`          | Authenticated                                                      |
+| `chat:thinking`         | Agent processing                                                   |
+| `chat:response`         | Agent reply with optional `trace`, `plan`, `reflectionGap`         |
+| `chat:error`            | Error                                                              |
+| `task:update`           | Task progress/status                                               |
+| `confirmation:required` | WRITE/DESTRUCTIVE tool awaiting approval                           |
+| `agent:state`           | Graph state transition (PLANNING/THINKING/CALLING_TOOL/REFLECTING) |
 
-**Client → Server messages:**
+**Client → Server:**
 
-| Type                   | Payload                                 | Description                           |
-| ---------------------- | --------------------------------------- | ------------------------------------- |
-| `chat`                 | `{ content: string }`                   | Send a user message                   |
-| `task:confirm`         | `{ taskId, approved: boolean }`         | Approve/deny a background task action |
-| `task:cancel`          | `{ taskId }`                            | Cancel a task                         |
-| `confirmation:respond` | `{ confirmationId, approved: boolean }` | Approve/deny an inline tool action    |
-
----
-
-## Environment Variables
-
-| Variable          | Default | Description                                       |
-| ----------------- | ------- | ------------------------------------------------- |
-| `ALAN_PORT`       | `7432`  | Backend HTTP/WS port                              |
-| `ALAN_PASSPHRASE` | —       | Auto-unlock vault on start (**development only**) |
-
-> **Never set `ALAN_PASSPHRASE` in production.** It exposes your master key in the process environment and shell history. Use the UI unlock flow.
+| Type                   | Payload                                 |
+| ---------------------- | --------------------------------------- |
+| `chat`                 | `{ content: string }`                   |
+| `task:confirm`         | `{ taskId, approved: boolean }`         |
+| `task:cancel`          | `{ taskId }`                            |
+| `confirmation:respond` | `{ confirmationId, approved: boolean }` |
 
 ---
 
@@ -416,13 +360,12 @@ Connect to `ws://127.0.0.1:7432`. Send auth immediately after connect:
 
 | Layer            | Technology                                        |
 | ---------------- | ------------------------------------------------- |
-| Backend runtime  | Node.js 20 + TypeScript 5                         |
+| Backend          | Node.js 20 + TypeScript 5                         |
 | LLM              | Google Gemini 2.5 Flash (`@google/generative-ai`) |
 | Secret vault     | `better-sqlite3` + Node.js `crypto` (AES-256-GCM) |
-| Key derivation   | `argon2` (Argon2id — memory-hard)                 |
+| Key derivation   | `argon2` (Argon2id)                               |
 | Task persistence | SQLite via `better-sqlite3`                       |
 | HTTP server      | Express 4 + `helmet` + `cors`                     |
 | WebSocket        | `ws`                                              |
 | Frontend         | React 18 + Vite 5 + Tailwind CSS 3                |
 | Icons            | `lucide-react`                                    |
-| Font             | JetBrains Mono                                    |
